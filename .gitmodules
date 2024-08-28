@@ -1,0 +1,18 @@
+[submodule "slr-poseformer-vgt"]
+	path = slr-poseformer-vgt
+	url = https://huggingface.co/signon-project/slr-poseformer-vgt
+[submodule "slr-poseformer-ngt"]
+	path = slr-poseformer-ngt
+	url = https://huggingface.co/signon-project/slr-poseformer-ngt
+[submodule "slr-poseformer-bsl"]
+	path = slr-poseformer-bsl
+	url = https://huggingface.co/signon-project/slr-poseformer-bsl
+[submodule "slr-poseformer-isl"]
+	path = slr-poseformer-isl
+	url = https://huggingface.co/signon-project/slr-poseformer-isl
+[submodule "slt-embedding-to-text"]
+	path = slt-embedding-to-text
+	url = https://huggingface.co/signon-project/slt-embedding-to-text
+[submodule "text-to-text-translator"]
+	path = text-to-text-translator
+	url = https://huggingface.co/signon-project/text-to-text-translator

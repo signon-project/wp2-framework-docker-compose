@@ -1,0 +1,196 @@
+# Copyright 2021-2023 FINCONS GROUP AG within the Horizon 2020
+# European project SignON under grant agreement no. 101017255.
+
+# Licensed under the Apache License, Version 2.0 (the "License"); 
+# you may not use this file except in compliance with the License. 
+# You may obtain a copy of the License at 
+
+#     http://www.apache.org/licenses/LICENSE-2.0 
+
+# Unless required by applicable law or agreed to in writing, software 
+# distributed under the License is distributed on an "AS IS" BASIS, 
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. 
+# See the License for the specific language governing permissions and 
+# limitations under the License.
+
+version: '3.9'
+
+services:
+
+  rabbitmq:
+    image: rabbitmq:3.9-management
+    ports:
+     - "5682:5682"
+     - "5672:5672"
+    restart: always
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 0s
+      timeout: 5s
+      retries: 300
+
+  minio-inference:
+    image: quay.io/minio/minio:RELEASE.2022-03-05T06-32-39Z
+    ports:
+     - "9000:9000"
+     - "9001:9001"
+    command: server /inference-data --address ":9000" --console-address ":9001"
+    volumes:
+     - "/home/signon/minio-inference-data:/inference-data"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://minio-inference:9000/minio/health/live"]
+      interval: 0s
+      timeout: 2s
+      retries: 300
+
+  minio-contribution:
+    image: quay.io/minio/minio:RELEASE.2022-03-05T06-32-39Z
+    ports:
+     - "9900:9900"
+     - "9901:9901"
+    command: server /contribution-data --address ":9900" --console-address ":9901"
+    volumes:
+     - "/data/signon/minio-contribution-data:/contribution-data"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://minio-contribution:9900/minio/health/live"]
+      interval: 0s
+      timeout: 2s
+      retries: 300
+
+  minio-client:
+    image: minio/mc:RELEASE.2022-02-26T03-58-31Z
+    volumes:
+     - "./minio/minio-config.sh:/minio-config.sh"
+     - "./minio/users.csv:/users.csv"
+    env_file:
+     - "./minio/.env"
+     - "./signon-orchestrator/.env"
+     - "./signon-wp3-dispatcher/.env"
+     - "./signon-wp4-dispatcher/.env"
+     - "./signon-wp5-dispatcher/.env"
+    restart: on-failure
+    depends_on:
+      minio-inference:
+        condition: service_healthy
+      minio-contribution:
+        condition: service_healthy
+    entrypoint: /minio-config.sh
+
+  signon-orchestrator:
+    image: signon-orchestrator:17.0.0
+    ports:
+     - "8080:8080"
+    volumes:
+     - "./signon-orchestrator-configuration/config.yml:/application.yml"
+     - "./minioUpload:/minioUpload"
+    env_file:
+      - "./signon-orchestrator/.env"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-X", "GET", "http://signon-orchestrator:8080/version"]
+      interval: 0s
+      timeout: 5s
+      retries: 300
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio-inference:
+        condition: service_healthy
+      minio-contribution:
+        condition: service_healthy
+
+  signon-wp3-dispatcher:
+    image: signon-wp3-dispatcher:4.0.0
+    volumes:
+     - "./signon-wp3-dispatcher/config.yml:/config.yml"
+     - "./minioDownload:/minioDownload"
+    env_file:
+      - "./signon-wp3-dispatcher/.env"
+    restart: always
+    depends_on:
+      signon-orchestrator:
+        condition: service_healthy
+
+  signon-wp4-dispatcher:
+    image: signon-wp4-dispatcher:5.1.0
+    volumes:
+     - "./signon-wp4-dispatcher/config.yml:/config.yml"
+    env_file:
+      - "./signon-wp4-dispatcher/.env"
+    restart: always
+    depends_on:
+      signon-orchestrator:
+        condition: service_healthy
+
+  signon-wp5-dispatcher:
+    image: signon-wp5-dispatcher:4.0.0
+    volumes:
+     - "./signon-wp5-dispatcher/config.yml:/config.yml"
+    env_file:
+      - "./signon-wp5-dispatcher/.env"
+    restart: always
+    depends_on:
+      signon-orchestrator:
+        condition: service_healthy
+
+  servernlu:
+    image: server_nlu:1.0.8
+    ports:
+    - "5000:5000"
+    restart: always
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  server_slr:
+    image: server_slr:1.0.1
+    restart: always
+    ports:
+     - "5002:5002"
+    volumes:
+      - "./slr-poseformer-vgt/poseformer_v1.0_vgt.ckpt:/model/slr_vgt_v0.2.0.ckpt"
+      - "./slr-poseformer-ngt/poseformer_v1.0_ngt.ckpt:/model/slr_ngt_v0.1.0.ckpt"
+      - "./slr-poseformer-bsl/poseformer_v1.0_bsl.ckpt:/model/slr_bsl_v0.1.0.ckpt"
+      - "./slr-poseformer-isl/poseformer_v1.0_isl.ckpt:/model/slr_isl_v0.1.0.ckpt"
+
+  text2text-translation:
+    image: text2text-translation:2.0.0
+    volumes:
+     - "./text-to-text-translator:/model"
+    ports:
+     - "5001:5001"
+    restart: always
+
+  embedding2text-translation:
+    image: embedding2text_translation:2.0.0
+    volumes:
+     - "./slt-embedding-to-text/best.ckpt:/model/best.ckpt"
+    ports:
+     - "5003:5003"
+    restart: always
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+  text2gloss:
+    image: text2gloss:3.0.0
+    ports:
+      - "5004:5004"
+    restart: always
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
